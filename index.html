@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Обо мне</title>
+    <title>Обо мне и мои задачи</title>
     <style>
         * {
             box-sizing: border-box;
@@ -60,16 +60,30 @@
             border-radius: 10px;
             padding: 24px 28px;
             box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
+            margin-bottom: 24px;
+        }
+
+        input, button {
+            padding: 8px;
+            margin: 4px 0;
+            font-size: 15px;
+        }
+
+        #warning {
+            display: none;
+            background: #ffe5e5;
+            color: #a00;
+            padding: 10px;
+            border-radius: 6px;
         }
     </style>
 </head>
 <body>
+    <!-- ===== Страница «Обо мне» ===== -->
     <div class="card">
-        <!-- Блок 1: заголовок с именем -->
         <h1>Алимгулов Амир Уралович</h1>
-        <p class="subtitle">Студент IT TOP Коледжа 4 курс</p>
+        <p class="subtitle">Студент IT TOP Колледжа, 4 курс</p>
 
-        <!-- Блок 2: список «что умею» из 3 пунктов -->
         <h2>Что умею</h2>
         <ul>
             <li>Верстаю страницы на HTML и CSS, добавляю интерактив на JavaScript</li>
@@ -77,7 +91,6 @@
             <li>Работаю с Git: коммиты, ветки, публикация сайта через GitHub Pages</li>
         </ul>
 
-        <!-- Блок 3: ссылка на репозиторий GitHub -->
         <h2>Мой репозиторий</h2>
         <p>
             Исходный код проекта:
@@ -86,5 +99,127 @@
             </a>
         </p>
     </div>
+
+    <!-- ===== Приложение «Мои задачи» ===== -->
+    <div class="card">
+        <h2>Мои задачи</h2>
+
+        <p id="warning">
+            Впишите свои Project URL и anon key в начало блока &lt;script&gt; в этом файле
+            (Supabase → Project Settings → API), сохраните файл и обновите страницу.
+        </p>
+
+        <div id="auth">
+            <input id="email" type="email" placeholder="Почта">
+            <input id="password" type="password" placeholder="Пароль (от 6 символов)">
+            <button onclick="signUp()">Регистрация</button>
+            <button onclick="signIn()">Войти</button>
+        </div>
+
+        <div id="app" style="display:none">
+            <p>Вы вошли как <span id="who"></span> <button onclick="signOut()">Выйти</button></p>
+            <input id="task" placeholder="Новая задача">
+            <button onclick="addTask()">Добавить</button>
+            <ul id="list"></ul>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script>
+        // Эти два значения берём в Supabase: Project Settings → API
+        const SUPABASE_URL = "https://hemkfosfsymkywdopkga.supabase.co";
+        const SUPABASE_KEY = "sb_publishable_xVZlr0G0sT5k-rginmu7JA_uEYe3ILQ";
+        const db = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+        // Подсказка, если ключи ещё не вписаны
+        if (SUPABASE_URL.includes("ВАШ-ПРОЕКТ") || SUPABASE_KEY.includes("ВАШ-")) {
+            document.getElementById("warning").style.display = "block";
+        }
+
+        async function signUp() {
+            const { error } = await db.auth.signUp({
+                email: document.getElementById("email").value,
+                password: document.getElementById("password").value,
+            });
+            alert(error ? "Ошибка: " + error.message : "Готово, теперь войдите");
+        }
+
+        async function signIn() {
+            const { error } = await db.auth.signInWithPassword({
+                email: document.getElementById("email").value,
+                password: document.getElementById("password").value,
+            });
+            if (error) { alert("Ошибка: " + error.message); return; }
+            showApp();
+        }
+
+        async function signOut() {
+            await db.auth.signOut();
+            location.reload();
+        }
+
+        async function showApp() {
+            const { data: { user } } = await db.auth.getUser();
+            if (!user) return;
+            document.getElementById("auth").style.display = "none";
+            document.getElementById("app").style.display = "block";
+            document.getElementById("who").textContent = user.email;
+            loadTasks();
+        }
+
+        async function loadTasks() {
+            const { data, error } = await db.from("tasks").select("*").order("id");
+            if (error) { alert(error.message); return; }
+            const list = document.getElementById("list");
+            list.innerHTML = "";
+            for (const t of data) {
+                const li = document.createElement("li");
+                li.textContent = t.title + " ";
+
+                // Зачёркиваем выполненные задачи
+                if (t.done) {
+                    li.style.textDecoration = "line-through";
+                }
+
+                // Кнопка «Сделано» — только для невыполненных
+                if (!t.done) {
+                    const doneBtn = document.createElement("button");
+                    doneBtn.textContent = "Сделано";
+                    doneBtn.onclick = () => markDone(t.id);
+                    li.appendChild(doneBtn);
+                }
+
+                // Кнопка удаления
+                const delBtn = document.createElement("button");
+                delBtn.textContent = "×";
+                delBtn.onclick = () => deleteTask(t.id);
+                li.appendChild(delBtn);
+
+                list.appendChild(li);
+            }
+        }
+
+        async function addTask() {
+            const title = document.getElementById("task").value.trim();
+            if (!title) return;
+            const { data: { user } } = await db.auth.getUser();
+            const { error } = await db.from("tasks").insert({ title, user_id: user.id });
+            if (error) { alert(error.message); return; }
+            document.getElementById("task").value = "";
+            loadTasks();
+        }
+
+        async function markDone(id) {
+            await db.from("tasks").update({ done: true }).eq("id", id);
+            loadTasks();
+        }
+
+        async function deleteTask(id) {
+            await db.from("tasks").delete().eq("id", id);
+            loadTasks();
+        }
+
+        showApp(); // если уже входили раньше — сразу показываем задачи
+    </script>
 </body>
 </html>
